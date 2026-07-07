@@ -375,16 +375,115 @@ async function generateWithAI({ setIndex = null } = {}) {
 
 function applyAISetList(data, count, minutes) {
   const targetSec = minutes * 60;
+  const minSec = targetSec - 90;
+  const maxSec = targetSec + 180;
   const aiSets = Array.isArray(data.sets) ? data.sets : [];
+  const usedIds = new Set();
+
   state.sets = Array.from({ length: count }, (_, idx) => {
     const aiSet = aiSets[idx] || { name: `Set ${idx + 1}`, songs: [] };
-    const ids = (aiSet.songs || []).map(item => typeof item === "string" ? item : item.id).filter(id => getSong(id));
+    const rawSongs = Array.isArray(aiSet.songs) ? aiSet.songs : [];
+
+    const items = [];
+
+    rawSongs.forEach(item => {
+      const id = typeof item === "string" ? item : item.id;
+      if (!id || !getSong(id) || usedIds.has(id)) return;
+
+      items.push({ id, locked: false });
+      usedIds.add(id);
+    });
+
+    const repairedItems = repairSetDuration(
+      items,
+      idx,
+      count,
+      targetSec,
+      minSec,
+      maxSec,
+      usedIds
+    );
+
     return {
       name: aiSet.name || `Set ${idx + 1}`,
       targetSec,
-      items: ids.map(id => ({ id, locked: false }))
+      items: repairedItems
     };
   });
+}
+
+function setItemsDuration(items) {
+  return items.reduce((sum, item) => {
+    const song = getSong(item.id);
+    return sum + (song?.durationSec || 210);
+  }, 0);
+}
+
+function repairSetDuration(items, setIndex, setCount, targetSec, minSec, maxSec, usedIds) {
+  let repaired = [...items].filter(item => getSong(item.id));
+  let guard = 0;
+
+  while (setItemsDuration(repaired) < minSec && guard < 40) {
+    const currentDuration = setItemsDuration(repaired);
+    const remaining = targetSec - currentDuration;
+
+    const curve = buildCurveForSet(setIndex, setCount, Math.max(8, repaired.length + 3));
+    const targetEnergy = curve[Math.min(repaired.length, curve.length - 1)] || 7;
+    const previous = getSong(repaired[repaired.length - 1]?.id);
+
+    const candidates = state.songs
+      .filter(song => !usedIds.has(song.id))
+      .map(song => ({
+        song,
+        score:
+          fitScore(song, targetEnergy, previous, usedIds) -
+          Math.abs(remaining - (song.durationSec || 210)) / 8
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const choice =
+      candidates.find(c => currentDuration + (c.song.durationSec || 210) <= maxSec) ||
+      candidates[0];
+
+    if (!choice) break;
+
+    repaired.push({ id: choice.song.id, locked: false });
+    usedIds.add(choice.song.id);
+    guard++;
+  }
+
+  while (
+    setItemsDuration(repaired) > maxSec &&
+    repaired.some(item => !item.locked) &&
+    guard < 80
+  ) {
+    const removable = repaired
+      .map((item, index) => ({
+        item,
+        index,
+        song: getSong(item.id)
+      }))
+      .filter(x => !x.item.locked)
+      .sort((a, b) => {
+        const aPenalty =
+          (a.index === repaired.length - 1 ? 20 : 0) +
+          ((a.song?.energy || 5) >= 8 ? 15 : 0);
+
+        const bPenalty =
+          (b.index === repaired.length - 1 ? 20 : 0) +
+          ((b.song?.energy || 5) >= 8 ? 15 : 0);
+
+        return aPenalty - bPenalty;
+      })[0];
+
+    if (!removable) break;
+
+    usedIds.delete(removable.item.id);
+    repaired.splice(removable.index, 1);
+    guard++;
+  }
+
+  return repaired;
 }
 
 function analyseFlow() {
