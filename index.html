@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Set List Creator</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">♫</div>
+        <div>
+          <h1>Set List Creator</h1>
+          <p>AI-powered set planning</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-btn active" data-view="dashboard"><span>⌂</span>Dashboard</button>
+        <button class="nav-btn" data-view="library"><span>♪</span>Library</button>
+        <button class="nav-btn" data-view="saved"><span>▣</span>Saved Sets</button>
+        <button class="nav-btn" data-view="stats"><span>▥</span>Stats</button>
+        <button class="nav-btn" data-view="settings"><span>⚙</span>Settings</button>
+      </nav>
+
+      <div class="side-card">
+        <div class="side-card-icon">✦</div>
+        <h3>Planner Mode</h3>
+        <p>Import your songs, describe the gig, then build a set that climbs all night.</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2 id="pageTitle">Dashboard</h2>
+          <p id="statusText">Auto-saved locally</p>
+        </div>
+        <div class="top-actions">
+          <button class="icon-btn" id="loadSampleBtn" title="Load sample songs">Sample</button>
+          <button class="icon-btn" id="exportAllBtn" title="Export app backup">Backup</button>
+          <button class="avatar" title="Performer">DJ</button>
+        </div>
+      </header>
+
+      <section class="view active" id="dashboardView">
+        <div class="grid dashboard-grid">
+          <section class="panel import-panel">
+            <div class="panel-title-row">
+              <h3>Song Library</h3>
+              <label class="file-btn">
+                Import JSON
+                <input type="file" id="songImport" accept="application/json,.json" />
+              </label>
+            </div>
+            <div class="stat-stack">
+              <div class="stat-line"><span class="dot ok"></span><strong id="songCount">0</strong><span>songs imported</span></div>
+              <div class="stat-line"><span class="dot bpm"></span><strong id="bpmCount">0</strong><span>with BPM</span></div>
+              <div class="stat-line"><span class="dot energy"></span><strong id="energyCount">0</strong><span>with energy</span></div>
+              <div class="stat-line"><span class="dot floor"></span><strong id="floorCount">0</strong><span>tagged floorfillers</span></div>
+            </div>
+            <div class="muted small" id="lastImportText">No library imported yet.</div>
+          </section>
+
+          <section class="panel brief-panel">
+            <div class="two-col">
+              <label>Gig Type
+                <select id="gigType">
+                  <option>Wedding</option>
+                  <option>Pub</option>
+                  <option>Corporate</option>
+                  <option>Private Party</option>
+                  <option>Festival</option>
+                  <option>Piano Bar</option>
+                  <option>Acoustic Dinner</option>
+                  <option>Custom</option>
+                </select>
+              </label>
+              <label>Audience / Brief
+                <textarea id="brief" rows="2" placeholder="mixed ages, pop-rock, 90s/00s, build to a huge ending"></textarea>
+              </label>
+              <label>Set Length
+                <select id="setLength">
+                  <option value="2x60">2 x 60 minutes</option>
+                  <option value="2x45">2 x 45 minutes</option>
+                  <option value="3x45">3 x 45 minutes</option>
+                  <option value="1x60">1 x 60 minutes</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>Set Shape / Preset
+                <select id="preset">
+                  <option value="wedding">Classic Wedding Build</option>
+                  <option value="pub">Pub Rock Night</option>
+                  <option value="corporate">Corporate Safe But Fun</option>
+                  <option value="indie">Indie / Alternative Party</option>
+                  <option value="piano">Piano Bar Singalong</option>
+                  <option value="hot">High Energy From The Start</option>
+                  <option value="slow">Slow Burn To Climax</option>
+                  <option value="requests">Request-Friendly Flexible Set</option>
+                </select>
+              </label>
+            </div>
+            <div class="action-row">
+              <button class="primary" id="generateBtn">✦ Generate Set List</button>
+              <button id="regenerateBtn">↻ Regenerate Section</button>
+              <button id="lockAllBtn">☑ Lock Visible Songs</button>
+            </div>
+          </section>
+
+          <section class="panel score-panel">
+            <div class="score-head">
+              <div>
+                <h3>Flow Score</h3>
+                <div class="score" id="flowScore">0%</div>
+              </div>
+              <div class="pulse-circle">⌁</div>
+            </div>
+            <div class="score-lines" id="scoreLines"></div>
+          </section>
+        </div>
+
+        <div class="set-layout">
+          <section class="set-area" id="setsContainer"></section>
+          <aside class="right-rail">
+            <section class="panel chart-panel">
+              <h3>Energy Curve</h3>
+              <canvas id="energyCanvas" width="420" height="210"></canvas>
+            </section>
+            <section class="panel reasoning-panel">
+              <h3>AI / Flow Reasoning</h3>
+              <p id="reasoningText">Generate a set list to see why the app chose the flow.</p>
+            </section>
+            <section class="panel swaps-panel">
+              <h3>Emergency Swaps</h3>
+              <div id="swapList" class="swap-list muted">Select a song to see safer, higher energy and singalong alternatives.</div>
+            </section>
+          </aside>
+        </div>
+
+        <footer class="bottom-bar">
+          <button id="undoBtn">↶ Undo</button>
+          <button id="exportSongFinderBtn">{} Export to Song Finder</button>
+          <button id="exportPdfBtn">▧ Export PDF</button>
+          <button id="exportTextBtn">☰ Export Text</button>
+          <button class="primary" id="saveSetBtn">▣ Save Set</button>
+        </footer>
+      </section>
+
+      <section class="view" id="libraryView">
+        <section class="panel full-panel">
+          <div class="panel-title-row">
+            <div>
+              <h3>Song Library</h3>
+              <p class="muted">Edit energy, tags and notes so the set engine gets smarter.</p>
+            </div>
+            <div class="library-actions">
+              <input id="librarySearch" type="search" placeholder="Search songs..." />
+              <button id="addSongBtn">+ Add Song</button>
+              <button id="downloadLibraryBtn">Export Library</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="song-table" id="songTable">
+              <thead>
+                <tr>
+                  <th>Song</th><th>Artist</th><th>Year</th><th>BPM</th><th>Energy</th><th>Genres</th><th>Tags</th><th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="savedView">
+        <section class="panel full-panel">
+          <div class="panel-title-row">
+            <div>
+              <h3>Saved Sets</h3>
+              <p class="muted">Saved locally in this browser.</p>
+            </div>
+            <button id="clearSavedBtn">Clear Saved Sets</button>
+          </div>
+          <div id="savedSetsList" class="cards-list"></div>
+        </section>
+      </section>
+
+      <section class="view" id="statsView">
+        <section class="panel full-panel">
+          <div class="panel-title-row">
+            <div>
+              <h3>Performance Stats</h3>
+              <p class="muted">Rate how songs went after a gig. The app will use this history when suggesting future sets.</p>
+            </div>
+            <button id="clearHistoryBtn">Clear Crowd Feedback</button>
+          </div>
+          <div class="stats-grid" id="statsGrid"></div>
+          <div id="feedbackPanel" class="feedback-panel"></div>
+        </section>
+      </section>
+
+      <section class="view" id="settingsView">
+        <section class="panel full-panel settings-panel">
+          <h3>Settings</h3>
+          <div class="settings-grid">
+            <label>AI Proxy Endpoint
+              <input id="aiEndpoint" type="url" placeholder="https://your-worker.yourname.workers.dev" />
+              <span class="hint">Do not put your AI API key in this app. Use the Worker file included in the download.</span>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" id="useAI" />
+              <span>Use AI proxy when generating</span>
+            </label>
+            <label>Brand Name
+              <input id="brandName" type="text" placeholder="Set List Creator" />
+            </label>
+            <label>Accent Colour
+              <select id="accentMode">
+                <option value="teal">Teal / Client Selector</option>
+                <option value="green">Green</option>
+                <option value="blue">Blue</option>
+                <option value="mono">Mono High Contrast</option>
+              </select>
+            </label>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="saveSettingsBtn">Save Settings</button>
+            <button id="resetAppBtn">Reset App Data</button>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="songDialog">
+    <form method="dialog" class="dialog-card" id="songForm">
+      <h3 id="songDialogTitle">Edit Song</h3>
+      <input type="hidden" id="editSongId" />
+      <div class="dialog-grid">
+        <label>Title <input id="songTitle" required /></label>
+        <label>Artist <input id="songArtist" /></label>
+        <label>Year <input id="songYear" type="number" min="1900" max="2100" /></label>
+        <label>BPM <input id="songBpm" type="number" min="1" max="260" /></label>
+        <label>Duration <input id="songDuration" placeholder="3:42" /></label>
+        <label>Energy <input id="songEnergy" type="range" min="1" max="10" step="1" /></label>
+        <label>Genres <input id="songGenres" placeholder="Rock, Pop" /></label>
+        <label>Tags <input id="songTags" placeholder="floorfiller, opener, singalong" /></label>
+        <label class="wide">Notes <textarea id="songNotes" rows="3"></textarea></label>
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel">Cancel</button>
+        <button class="danger" id="deleteSongBtn" type="button">Delete</button>
+        <button class="primary" id="commitSongBtn" value="default">Save Song</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
