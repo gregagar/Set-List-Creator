@@ -65,13 +65,30 @@ function mergeDeep(base, extra) {
 }
 
 function saveState(message = "Auto-saved locally") {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  $("#statusText").textContent = message;
+  const stateToSave = {
+    ...state,
+    songs: [],
+    undo: []
+  };
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+    $("#statusText").textContent = message;
+  } catch (error) {
+    console.warn("Could not save local state", error);
+    $("#statusText").textContent = "Not saved locally — storage full";
+  }
 }
 
 function pushUndo() {
-  state.undo.push(JSON.stringify({ songs: state.songs, sets: state.sets, reasoning: state.reasoning }));
-  if (state.undo.length > 20) state.undo.shift();
+  state.undo.push(JSON.stringify({
+    sets: state.sets,
+    reasoning: state.reasoning,
+    selectedSongId: state.selectedSongId,
+    selectedSetIndex: state.selectedSetIndex
+  }));
+
+  if (state.undo.length > 10) state.undo.shift();
 }
 
 function toast(message) {
@@ -1026,7 +1043,12 @@ function exportSongFinder() {
 }
 
 function exportLibrary() { downloadJson("song-library.json", state.songs); }
-function exportBackup() { downloadJson(BACKUP_NAME, state); }
+function exportBackup() {
+  downloadJson(BACKUP_NAME, {
+    ...state,
+    exportedAt: new Date().toISOString()
+  });
+}
 function downloadJson(filename, payload) { downloadFile(filename, JSON.stringify(payload, null, 2), "application/json"); }
 function downloadFile(filename, content, type) {
   const blob = new Blob([content], { type });
@@ -1177,11 +1199,13 @@ function attachEvents() {
   $("#undoBtn").addEventListener("click", () => {
     const previous = state.undo.pop();
     if (!previous) return toast("Nothing to undo");
-    const restored = JSON.parse(previous);
-    state.songs = restored.songs;
-    state.sets = restored.sets;
-    state.reasoning = restored.reasoning;
-    saveState("Undo complete"); render();
+   const restored = JSON.parse(previous);
+state.sets = restored.sets || [];
+state.reasoning = restored.reasoning || state.reasoning;
+state.selectedSongId = restored.selectedSongId || null;
+state.selectedSetIndex = restored.selectedSetIndex || 0;
+saveState("Undo complete");
+render();
   });
   $("#exportTextBtn").addEventListener("click", exportText);
   $("#exportSongFinderBtn").addEventListener("click", exportSongFinder);
