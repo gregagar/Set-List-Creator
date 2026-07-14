@@ -133,21 +133,55 @@ function normalizeSong(input, index = 0) {
   const tags = parseList(input.tags || input.tag || input.mood);
   const genres = parseList(input.genres || input.genre);
   const energy = Number(input.energy || input.energyLevel || input.danceEnergy || 0) || inferEnergy({ title, artist, tags, genres });
+
   return {
     id,
     title: String(title).trim(),
     artist: String(artist).trim(),
     year,
     decade,
-    bpm: Number(input.bpm || input.BPM || 0) || "",
+
+    genre: input.genre || "",
+    genres,
+
+    bpm: Number(input.bpm || input.BPM || input.tempo || input.Tempo || 0) || "",
     durationSec: secondsFromDuration(input.durationSec || input.duration || input.time || input.length),
     energy: clamp(Math.round(energy), 1, 10),
-    genres,
+
     tags,
+
+    countryOfOrigin: input.countryOfOrigin || input.country || "",
+    link: input.link || "",
+    wiki: input.wiki || input.wikipedia || "",
+
+    upbeat: toBool(input.upbeat),
+    favourites: toBool(firstDefined(input.favourites, input.favorites)),
+    dancefloor: toBool(input.dancefloor),
+    singALong: toBool(firstDefined(input.singALong, input.singalong, input["sing-a-long"])),
+    happy: toBool(input.happy),
+    easyToSing: toBool(input.easyToSing),
+    romantic: toBool(input.romantic),
+    showcase: toBool(input.showcase),
+
     key: input.key || "",
     vocalRange: input.vocalRange || "",
     lineups: parseList(input.lineups || input.lineup || "solo, duo, band"),
-    notes: input.notes || input.note || ""
+    notes: input.notes || input.note || "",
+
+    recognisability: rating(input.recognisability),
+    pianoBarRating: rating(input.pianoBarRating),
+    ukAudienceRating: rating(input.ukAudienceRating),
+    singalongRating: rating(input.singalongRating),
+    dancefloorRating: rating(input.dancefloorRating),
+    obscurity: rating(input.obscurity),
+    isInstrumental: toBool(input.isInstrumental),
+    isSlowBackground: toBool(input.isSlowBackground),
+    setRoles: parseList(input.setRoles || input.setRole),
+    audienceTags: parseList(input.audienceTags || input.audienceTag),
+    risk: String(input.risk || "").toLowerCase().trim(),
+    aiTagConfidence: rating(input.aiTagConfidence),
+    aiTagReason: input.aiTagReason || "",
+    autoPick: input.autoPick === false || String(input.autoPick).toLowerCase() === "false" ? false : true
   };
 }
 
@@ -161,6 +195,34 @@ function inferEnergy(song) {
 }
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+function rating(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? clamp(Math.round(n), 1, 10) : "";
+}
+
+function toBool(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+
+  const text = String(value || "").trim().toLowerCase();
+
+  return [
+    "true",
+    "yes",
+    "y",
+    "1",
+    "tick",
+    "ticked"
+  ].includes(text);
+}
+
+function firstDefined(...values) {
+  return values.find(value =>
+    value !== undefined &&
+    value !== null &&
+    value !== ""
+  );
+}
 function getSong(id) { return state.songs.find(song => song.id === id); }
 function getAllSetItems() { return state.sets.flatMap(set => set.items || []); }
 function isUsed(id) { return getAllSetItems().some(item => item.id === id); }
@@ -184,13 +246,200 @@ function getBriefTerms() {
 }
 
 function songText(song) {
-  return `${song.title} ${song.artist} ${song.decade} ${(song.genres || []).join(" ")} ${(song.tags || []).join(" ")} ${song.notes || ""}`.toLowerCase();
+  return `
+    ${song.title}
+    ${song.artist}
+    ${song.decade}
+    ${song.genre || ""}
+    ${(song.genres || []).join(" ")}
+    ${(song.tags || []).join(" ")}
+    ${(song.setRoles || []).join(" ")}
+    ${(song.audienceTags || []).join(" ")}
+    ${song.countryOfOrigin || ""}
+    ${song.notes || ""}
+    ${song.aiTagReason || ""}
+  `.toLowerCase();
+}
+function getBriefProfile() {
+  const presetLabel = presets[state.settings.preset]?.label || "";
+  const text = `${state.settings.gigType} ${state.settings.brief} ${presetLabel}`.toLowerCase();
+
+  return {
+    raw: text,
+    pianoBar: /piano|piano bar|singing pianist|keys|keyboard|pub/.test(text),
+    ukAudience: /\buk\b|british|britain|england|english|scotland|wales|welsh|ireland|irish|london|somerset|bristol|manchester|liverpool|audience/.test(text),
+    wedding: /wedding|bride|groom|first dance|evening reception/.test(text),
+    party: /party|dance|dancefloor|floor|banger|high energy|climax|huge ending/.test(text),
+    singalong: /singalong|sing-a-long|sing along|audience|chorus|pub|piano bar/.test(text),
+    background: /background|cocktail|dinner|reception drinks|chilled|ambient/.test(text),
+    instrumental: /instrumental|piano instrumental|background piano/.test(text),
+    obscure: /obscure|deep cut|niche|less obvious|unusual/.test(text),
+    avoidCheese: /no cheese|avoid cheese|not cheesy|less cheesy/.test(text)
+  };
 }
 
+function hasAutoTags(song) {
+  return Boolean(
+    song.recognisability ||
+    song.pianoBarRating ||
+    song.ukAudienceRating ||
+    song.singalongRating ||
+    song.dancefloorRating ||
+    song.obscurity ||
+    song.aiTagConfidence
+  );
+}
+
+function candidateSuitabilityScore(song, targetEnergy = 6, previous = null, usedIds = new Set()) {
+  const profile = getBriefProfile();
+  const text = songText(song);
+
+  let score = 0;
+
+  if (song.autoPick === false && !profile.obscure) score -= 220;
+
+  if (song.isInstrumental && !profile.instrumental) score -= 160;
+  if (song.isSlowBackground && !profile.background) score -= 130;
+
+  if (song.obscurity) score -= song.obscurity * 14;
+  if (song.recognisability) score += song.recognisability * 9;
+
+  if (profile.pianoBar) score += (song.pianoBarRating || 0) * 12;
+  if (profile.ukAudience) score += (song.ukAudienceRating || 0) * 12;
+  if (profile.singalong || profile.pianoBar) score += (song.singalongRating || 0) * 10;
+  if (profile.party || profile.wedding) score += (song.dancefloorRating || 0) * 10;
+
+  if (song.favourites) score += 16;
+  if (song.singALong) score += profile.singalong || profile.pianoBar ? 26 : 10;
+  if (song.dancefloor) score += profile.party || profile.wedding ? 26 : 8;
+  if (song.easyToSing) score += profile.pianoBar ? 18 : 6;
+  if (song.upbeat) score += profile.party ? 10 : 4;
+  if (song.happy) score += profile.wedding || profile.party ? 8 : 3;
+  if (song.showcase) score += profile.pianoBar ? 8 : 0;
+  if (song.romantic && profile.party && !profile.wedding) score -= 8;
+
+  if (profile.ukAudience && /uk|british|england|scotland|wales|ireland/i.test(song.countryOfOrigin || "")) {
+    score += 8;
+  }
+
+  if (profile.pianoBar && /piano-bar|piano bar|pub|singalong|sing-along|anthem/.test(text)) score += 18;
+  if (profile.ukAudience && /uk-audience|british|britpop|pub/.test(text)) score += 16;
+  if (profile.party && /floor|dance|party|banger|peak|closer|anthem/.test(text)) score += 16;
+
+  if (profile.avoidCheese && /cheese|novelty|line dance|line-dance/.test(text)) score -= 90;
+
+  if (/instrumental/.test(text) && !profile.instrumental) score -= 80;
+  if (/background|cocktail|dinner/.test(text) && !profile.background) score -= 50;
+
+  if (song.risk === "high") score -= 45;
+  if (song.risk === "medium") score -= 18;
+
+  score -= Math.abs((song.energy || 5) - targetEnergy) * 6;
+
+  if (previous) {
+    if (previous.artist && song.artist && previous.artist.toLowerCase() === song.artist.toLowerCase()) score -= 35;
+  }
+
+  if (usedIds.has(song.id)) score -= 999;
+
+  return score;
+}
+
+function buildCandidatePool({ count, minutes } = {}) {
+  const taggedSongs = state.songs.filter(hasAutoTags).length;
+
+  // If the library is barely tagged yet, do not over-filter.
+  if (taggedSongs < 25) {
+    return state.songs.slice(0, 500);
+  }
+
+  const targetSongCount =
+    count && minutes
+      ? Math.ceil((count * minutes * 60) / 210)
+      : 40;
+
+  const candidateLimit =
+    Math.min(500, Math.max(180, targetSongCount * 5));
+
+  const lockedIds = new Set(
+    state.sets.flatMap(set =>
+      (set.items || [])
+        .filter(item => item.locked)
+        .map(item => item.id)
+    )
+  );
+
+  const scored = state.songs
+    .map(song => ({
+      song,
+      score: candidateSuitabilityScore(song, 7, null, new Set())
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const selected = scored
+    .filter(item => item.score > -120 || lockedIds.has(item.song.id))
+    .slice(0, candidateLimit)
+    .map(item => item.song);
+
+  // Always include locked songs.
+  state.songs.forEach(song => {
+    if (lockedIds.has(song.id) && !selected.some(existing => existing.id === song.id)) {
+      selected.push(song);
+    }
+  });
+
+  return selected.slice(0, 500);
+}
+
+function compactSongForAI(song) {
+  return {
+    id: song.id,
+    title: song.title,
+    artist: song.artist,
+    year: song.year,
+    decade: song.decade,
+    genre: song.genre,
+    genres: song.genres,
+    bpm: song.bpm,
+    durationSec: song.durationSec,
+    energy: song.energy,
+    tags: song.tags,
+    countryOfOrigin: song.countryOfOrigin,
+
+    upbeat: song.upbeat,
+    favourites: song.favourites,
+    dancefloor: song.dancefloor,
+    singALong: song.singALong,
+    happy: song.happy,
+    easyToSing: song.easyToSing,
+    romantic: song.romantic,
+    showcase: song.showcase,
+
+    recognisability: song.recognisability,
+    pianoBarRating: song.pianoBarRating,
+    ukAudienceRating: song.ukAudienceRating,
+    singalongRating: song.singalongRating,
+    dancefloorRating: song.dancefloorRating,
+    obscurity: song.obscurity,
+    isInstrumental: song.isInstrumental,
+    isSlowBackground: song.isSlowBackground,
+    setRoles: song.setRoles,
+    audienceTags: song.audienceTags,
+    risk: song.risk,
+    aiTagConfidence: song.aiTagConfidence,
+    aiTagReason: song.aiTagReason,
+    autoPick: song.autoPick,
+
+    suitabilityScore: Math.round(candidateSuitabilityScore(song, 7, null, new Set()))
+  };
+}
 function fitScore(song, targetEnergy, previous, usedIds) {
   const { wants, avoids, brief } = getBriefTerms();
   const text = songText(song);
-  let score = 100;
+    let score = 100;
+
+  score += candidateSuitabilityScore(song, targetEnergy, previous, usedIds);
+
   score -= Math.abs((song.energy || 5) - targetEnergy) * 15;
   wants.forEach(term => { if (text.includes(term)) score += 12; });
   avoids.forEach(term => { if (term && text.includes(term)) score -= 80; });
@@ -324,19 +573,11 @@ async function generateWithAI({ setIndex = null } = {}) {
   toast("Asking AI musical director…");
 
   const { count, minutes } = parseSetLength(state.settings.setLength);
-  const compactSongs = state.songs.slice(0, 500).map(song => ({
-    id: song.id,
-    title: song.title,
-    artist: song.artist,
-    year: song.year,
-    decade: song.decade,
-    bpm: song.bpm,
-    durationSec: song.durationSec,
-    energy: song.energy,
-    genres: song.genres,
-    tags: song.tags,
-    notes: song.notes
-  }));
+  const candidatePool = buildCandidatePool({ count, minutes });
+
+  $("#statusText").textContent = `AI choosing from ${candidatePool.length} best-matching songs…`;
+
+  const compactSongs = candidatePool.map(compactSongForAI);
 
   const locked = state.sets.map((set, idx) => ({
     setIndex: idx,
@@ -702,7 +943,13 @@ function renderLibrary() {
     <td>${escapeHtml(song.artist)}</td>
     <td>${song.year || ""}</td>
     <td>${song.bpm || ""}</td>
-    <td><span class="energy-pill" style="color:${energyColor(song.energy)}">${song.energy}</span></td>
+       <td><span class="energy-pill" style="color:${energyColor(song.energy)}">${song.energy}</span></td>
+    <td class="small">
+      ${song.recognisability ? `Rec ${song.recognisability}` : ""}
+      ${song.pianoBarRating ? ` · Piano ${song.pianoBarRating}` : ""}
+      ${song.ukAudienceRating ? ` · UK ${song.ukAudienceRating}` : ""}
+      ${song.obscurity ? ` · Obs ${song.obscurity}` : ""}
+    </td>
     <td>${(song.genres || []).map(tagHtml).join("")}</td>
     <td>${(song.tags || []).map(tagHtml).join("")}</td>
     <td><button data-action="edit-song" data-song-id="${song.id}">Edit</button></td>
