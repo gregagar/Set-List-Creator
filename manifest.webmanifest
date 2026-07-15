@@ -1,9 +1,0 @@
-{
-  "name": "Set List Creator",
-  "short_name": "Set Lists",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#071011",
-  "theme_color": "#1fb6b8",
-  "icons": []
-}
